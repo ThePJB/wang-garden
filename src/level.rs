@@ -1,361 +1,321 @@
-use glam::Vec3;
-use std::collections::HashMap;
-use crate::entity::*;
-use crate::rect::*;
-use rand::prelude::*;
 use crate::kmath::*;
+use crate::renderer::*;
+use crate::rect::*;
+use crate::application::*;
+use serde::{Serialize, Deserialize};
+use std::fs::File;
+use std::io::prelude::*;
+use std::fs;
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
-pub struct Tile {
-    pub walkable: bool,
-    pub overhang: bool,
-    pub underhang: bool,
-    pub edge: bool,
+pub type Tile = [Vec3; 4];
+pub trait TileRotate {
+    fn rotate_cw(&self) -> Tile;
+    fn rotate_ccw(&self) -> Tile;
 }
 
-#[derive(Debug)]
-pub struct LevelGenParams {
-    side_length: i32,
-    num_walkers: i32,
-    walk_iters: i32,
-    p_change_dir: f32,
-}
-
-impl LevelGenParams {
-    pub fn new() -> LevelGenParams {
-        LevelGenParams {
-            side_length: 20,
-            num_walkers: 20,
-            walk_iters: 20,
-            p_change_dir: 0.3,
-        }
+impl TileRotate for Tile {
+    fn rotate_cw(&self) -> Tile {
+        [self[3], self[0], self[1], self[2]]
     }
-    pub fn new_rand() -> LevelGenParams {
-        let mut rng = rand::thread_rng();
-        LevelGenParams {
-            side_length: rng.gen_range(15..50),
-            num_walkers: rng.gen_range(15..50),
-            walk_iters: rng.gen_range(5..40),
-            p_change_dir: rng.gen_range(0.1..0.5),
-        }
+    fn rotate_ccw(&self) -> Tile {
+        [self[1], self[2], self[3], self[0]]
     }
 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LevelData {
+    pub name: String,
+    pub number: i32,
+    pub w: usize,
+    pub h: usize,
+    pub tile_choices: Vec<Tile>,
+    pub fixed_tiles: Vec<Option<Tile>>,
+}
+
+
+impl LevelData {
+    pub fn fresh_solution(&self) -> Vec<Option<Tile>> {
+        self.fixed_tiles.clone()
+    }
+
+    pub fn new(number: i32, name: String, w: usize, h: usize, tile_choices: Vec<Tile>) -> LevelData {
+        LevelData {
+            name,
+            number,
+            w,
+            h,
+            tile_choices,
+            fixed_tiles: vec![None; w*h],
+        }
+    }
+
+    pub fn load(json_str: String) -> LevelData {
+        serde_json::from_str(&json_str).unwrap()
+    }
+
+    pub fn save(&self) {
+        let path = format!("{}{:03} - {}.json", LEVEL_PATH, self.number, self.name);
+        let json_str = serde_json::to_string(self).unwrap();
+        let mut file = File::create(path).unwrap();
+        file.write_all(json_str.as_bytes()).unwrap();
+    }
+}
+
+
+
 
 pub struct Level {
-    pub entities: HashMap<u32, Entity>, 
-    pub tiles: Vec<Tile>,
-    pub side_length: usize,
-    pub grid_size: f32,
-
-    pub floor_colour: Vec3,
-    pub wall_colour: Vec3,
+    // pub data: LevelData,
+    pub current_solution: Vec<Option<Tile>>,
+    pub selected_tile: Tile,
+    pub selected_tile_idx: i32,
 }
 
-struct Walker {
-    pos: (i32, i32),
-    dir: i32,
-    alive: bool,
+#[derive(Clone, Copy)]
+pub enum GUIElement {
+    Background,
+    Menu,
+    Game,
+    GameBoard,
+    MenuTile(usize),
+    GameTile(usize),
+    GridLineH,
+    GridLineV,
+    SelectionIndicator,
 }
+
+
+/*
 
 impl Level {
-    pub fn new(mut player: Entity) -> Level {
-        let params = LevelGenParams::new_rand();
-        println!("Level gen params: {:?}", params);
 
-        let start_tile = Tile {walkable: false, overhang: false, underhang: false, edge: false};
 
-        let mut level = Level {
-            entities: HashMap::new(),
-            tiles: vec!(start_tile; (params.side_length*params.side_length) as usize),
-            side_length: params.side_length as usize,
-            grid_size: 0.2,
-            floor_colour: Vec3::new(0.75, 0.75, 0.5),
-            wall_colour: Vec3::new(0.2, 0.2, 0.4),
 
-        };
+    pub fn draw(&self, renderer: &mut Renderer) {
+        let empty_colour = Vec4::new(0.2, 0.2, 0.2, 1.0);
+        let fixed_t = 0.4;
 
-        let mut walkers = Vec::new();
-        let dirs = [(1, 0), (-1,0), (0, -1), (0, 1)];
-
-        for _ in 0..params.num_walkers {
-            walkers.push(Walker {
-                pos: (params.side_length/2, params.side_length/2),
-                dir: rand::thread_rng().gen_range(0..4),
-                alive: true,
-            });
-        }
-
-        level.tiles[(params.side_length/2 * params.side_length + params.side_length/2) as usize].walkable = true;
-        for _ in 0..params.walk_iters {
-            for w in walkers.iter_mut() {
-                if !w.alive {
-                    continue;
-                }
-
-                // maybe change direction
-                if rand::thread_rng().gen_range(0.0..1.0) < params.p_change_dir {
-                    let mut idx = rand::thread_rng().gen_range(0..3);
-                    if idx >= w.dir {
-                        idx += 1;
+        for (elem_type, rect) in self.gui_elements.iter() {
+            match elem_type {
+                GUIElement::GameTile(i) => {
+                    if let Some(tile) = self.placed_tiles[*i] {
+                        if self.fixed[*i] {
+                            renderer.draw_tile_reverse_bevel(*rect, tile[0], tile[1], tile[2], tile[3], 10.0, 1.0);
+                        } else {
+                            renderer.draw_tile(*rect, tile[0], tile[1], tile[2], tile[3], 10.0, 1.0);
+                        }
+                    } else {
+                        renderer.draw_rect(*rect, empty_colour, 10.0);
                     }
-                    w.dir = idx;
-                }
 
-                // advance
-                // kill instead of going off
-                let dir = dirs[w.dir as usize];
-                let candidate_pos = (w.pos.0 + dir.0, w.pos.1 + dir.1);
-                if candidate_pos.0 <= 0 || candidate_pos.1 <= 0 || 
-                        candidate_pos.0 >= params.side_length-1 || 
-                        candidate_pos.1 >= params.side_length-1 {
-                    w.alive = false;
-                } else {
-                    w.pos = candidate_pos;
-                    level.tiles[(w.pos.0 * params.side_length + w.pos.1) as usize].walkable = true;
-                }
-            }
-        }
-        
-        let mut walker_positions: Vec<(i32, i32)> = walkers.iter().map(|w| w.pos).collect::<Vec<(i32, i32)>>();
-        walker_positions.sort();
-        walker_positions.dedup();
-        
-        let player_pos = *walker_positions.iter().max_by_key(|(x, y)| {
-            let xp = x - params.side_length/2;
-            let yp = y - params.side_length/2;
-            xp*xp+yp*yp
-        }).unwrap();
-        
-        let player_pos_x = player_pos.0 as f32 * level.grid_size + level.grid_size as f32/2.0;
-        let player_pos_y = player_pos.1 as f32 * level.grid_size + level.grid_size as f32/2.0;
-
-        player.aabb.x = player_pos_x - player.aabb.w/2.0;
-        player.aabb.y = player_pos_y - player.aabb.h/2.0;
-
-        level.entities.insert(0, player);
-
-        walker_positions.retain(|pos| *pos != player_pos);
-
-        for (x, y) in walker_positions {
-            let walker_pos_x = x as f32 * level.grid_size + level.grid_size as f32/2.0;
-            let walker_pos_y = y as f32 * level.grid_size + level.grid_size as f32/2.0;
-
-            let entity_kinds = vec!(EntityKind::WalkerShooter, EntityKind::RunnerGunner, EntityKind::Chungus, EntityKind::GunPickup);
-
-            level.entities.insert(rand::thread_rng().gen(), Entity::new(
-                entity_kinds[rand::thread_rng().gen_range(0..entity_kinds.len())], 
-                Vec2::new(walker_pos_x, walker_pos_y)));
-        }
-
-        // CA pass
-        for i in 0..level.side_length as i32 {
-            for j in 0..level.side_length as i32 {
-                let maybe_tile_below = level.get_tile(i, j+1);
-                let maybe_tile_above = level.get_tile(i, j-1);
-                let mut this_tile = level.get_tile_mut(i, j).unwrap();
-
-                if this_tile.walkable {
-                    match maybe_tile_above {
-                        Some(above) if !above.walkable => {this_tile.underhang = true},
-                        _ => {},
+                    if let Some(idx) = self.rollover_tile {
+                        if idx == *i && self.selected_tile.is_some() && !self.fixed[*i] {
+                            let tile = self.selected_tile.unwrap();
+                            renderer.draw_tile(*rect, tile[0], tile[1], tile[2], tile[3], 15.0, 0.5);
+                        }
                     }
-                    match maybe_tile_below {
-                        Some(below) if !below.walkable => {this_tile.overhang = true},
-                        _ => {},
-                    }
-                } else {
-                    match maybe_tile_below {
-                        Some(below) if below.walkable => {this_tile.edge = true},
-                        _ => {},
-                    }
+                },
+                GUIElement::MenuTile(i) => {
+                    let tile = self.tile_choices[*i];
+                    renderer.draw_tile(*rect, tile[0], tile[1], tile[2], tile[3], 10.0, 5.0);
+                },
+                GUIElement::Background => {
+                    renderer.draw_rect(*rect, Vec4::new(0.4, 0.4, 0.4, 1.0), 1.0);
                 }
-            }
-        }
-
-        level
-    }
-
-    pub fn get_tile(&self, i: i32, j: i32) -> Option<Tile> {
-        if i >= 0 && i < self.side_length as i32 && j >= 0 && j < self.side_length as i32 {
-            Some(self.tiles[i as usize*self.side_length + j as usize])
-        } else {
-            None
-        }
-    }
-
-    pub fn get_tile_mut(&mut self, i: i32, j: i32) -> Option<&mut Tile> {
-        if i >= 0 && i < self.side_length as i32 && j >= 0 && j < self.side_length as i32 {
-            Some(&mut self.tiles[i as usize*self.side_length + j as usize])
-        } else {
-            None
-        }
-    }
-
-    pub fn set_tile(&mut self, i: i32, j: i32, t: Tile) {
-        self.tiles[i as usize*self.side_length + j as usize] = t
-    }
-
-    pub fn apply_command(&mut self, command: EntityCommand) {
-        match command {
-            EntityCommand::Move(id, dir) => {
-                if let Some(ent) = self.entities.get_mut(&id) {
-                    ent.velocity = ent.speed * dir;
-                }},
-            EntityCommand::Shoot(id, dir) => {
-                if let Some(ent) = self.entities.get_mut(&id) {
-                ent.want_shoot = true;
-                ent.previous_shoot_dir = dir;
-            }},
-            EntityCommand::Unshoot(id) => {
-                if let Some(ent) = self.entities.get_mut(&id) {
-                ent.want_shoot = false;
-            }},
-        }
-    }
-
-    pub fn raycast(&self, ray_origin: Vec2, ray_destination: Vec2) -> Option<Vec2> {
-        let round_up = |u: f32, side_length: f32| {
-            (u/side_length).ceil() * side_length
-        };
-        let round_down = |u: f32, side_length: f32| {
-            (u/side_length).floor() * side_length
-        };
-        let bound = |u, sign: i32, side_length| {
-            if sign >= 0 {
-                let ru = round_up(u, side_length);
-                if ru == u { side_length } else {ru - u}
-            } else {
-                let ru = round_down(u, side_length);
-                if ru == u { side_length } else {u - ru}
-            }
-        };
-
-        let mut grid_x = (ray_origin.x / self.grid_size) as i32;
-        let mut grid_y = (ray_origin.y / self.grid_size) as i32;
-
-        let grid_dest_x = (ray_destination.x / self.grid_size) as i32;
-        let grid_dest_y = (ray_destination.y / self.grid_size) as i32;
-
-        let delta_vec = ray_destination - ray_origin;
-        let ray_dir = delta_vec.normalize();
-
-        // increment these
-        let mut actual_march_x: f32 = ray_origin.x;
-        let mut actual_march_y: f32 = ray_origin.y;
-
-        let sign_x = if delta_vec.x > 0.0 { 1 } else { -1 };
-        let sign_y = if delta_vec.y > 0.0 { 1 } else { -1 };
-
-        // cycle through these
-        let side_length = self.grid_size; // should just be elems
-        let mut next_tile_in_x: f32 = bound(actual_march_x, sign_x, side_length);
-        let mut next_tile_in_y: f32 = bound(actual_march_y, sign_y, side_length);
-
-        let mut n = 0;
-        loop {
-            if n > 9999 { 
-                panic!("raycast infinite loop");
-                println!("bailing");
-                return None; 
-            }
-            n += 1;
-            // might be a bit inefficient, checking same thing repeatedly, dont care its more readable rn
-            // check to terminate (wall strike)
-            if !self.tiles[(grid_x*self.side_length as i32 + grid_y) as usize].walkable {
-                return Some(Vec2::new(actual_march_x, actual_march_y));
-            }
-
-            if grid_x == grid_dest_x && grid_y == grid_dest_y {
-                return None;
-            }
-
-            let x_distance = bound(actual_march_x, sign_x, side_length);
-            let y_distance = bound(actual_march_y, sign_y, side_length);
-
-            let x_want = (x_distance / ray_dir.x).abs();
-            let y_want = (y_distance / ray_dir.y).abs();
-            
-            let (x_to_march, y_to_march) = // this msut be wrong
-                if x_want <= y_want {
-                    let x_to_march = x_distance;
-                    let y_to_march = ray_dir.div_scalar(ray_dir.x).mul_scalar(x_distance).y;
-                    (x_to_march.abs(), y_to_march.abs())
-                } else {
-                    let y_to_march = y_distance;
-                    let x_to_march = ray_dir.div_scalar(ray_dir.y).mul_scalar(y_distance).x;
-                    (x_to_march.abs(), y_to_march.abs())
-                };
-
-            // march the ray
-            actual_march_x += x_to_march * sign_x as f32;
-            actual_march_y += y_to_march * sign_y as f32;
-
-            // calculate grid update
-            next_tile_in_x -= x_to_march;
-            if next_tile_in_x <= 0.0 {
-                next_tile_in_x += side_length;
-                grid_x += sign_x;
-            }
-            next_tile_in_y -= y_to_march;
-            if next_tile_in_y <= 0.0 {
-                next_tile_in_y += side_length;
-                grid_y += sign_y;
+                GUIElement::SelectionIndicator => {
+                    renderer.draw_rect(*rect, Vec4::new(1.0, 1.0, 0.0, 1.0), 4.0);
+                }
+                /*
+                GUIElement::GridLineH => {
+                    renderer.draw_rect(rect.child(0.0, 0.0, 1.0, 0.5), Vec3::new(1.0, 1.0, 1.0), 20.0);
+                    renderer.draw_rect(rect.child(0.0, 0.5, 1.0, 0.5), Vec3::new(0.0, 0.0, 0.0), 20.0);
+                }
+                GUIElement::GridLineV => {
+                    renderer.draw_rect(rect.child(0.0, 0.0, 0.5, 1.0), Vec3::new(1.0, 1.0, 1.0), 20.0);
+                    renderer.draw_rect(rect.child(0.5, 0.0, 0.5, 1.0), Vec3::new(0.0, 0.0, 0.0), 20.0);
+                }
+                */
+                _ => {},
             }
         }
     }
-}
-/*
-#[test]
-pub fn test_raycast() {
-    let level = Level {
-        entities: HashMap::new(),
-        tiles: vec!(
-            Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall,
-        ),
-        side_length: 8,
-        grid_size: 1.0,
-        floor_colour: Vec3::new(0.0, 0.0, 0.0),
-        wall_colour: Vec3::new(0.0, 0.0, 0.0),
-    };
     
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(6.9, 6.9)), None);
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(1.1, 6.9)), None);
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(6.9, 1.1)), None);
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(7.1, 1.1)), Some(Vec2::new(7.0, 1.1)));
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(7.1, 7.1)), Some(Vec2::new(7.0, 7.0)));
-}
-
-#[test]
-pub fn test_raycast2() {
-    let level = Level {
-        entities: HashMap::new(),
-        tiles: vec!(
-            Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall, Tile::Wall, Tile::Wall,
-            Tile::Wall, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Open, Tile::Wall,
-            Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall, Tile::Wall,
-        ),
-        side_length: 8,
-        grid_size: 1.0,
-        floor_colour: Vec3::new(0.0, 0.0, 0.0),
-        wall_colour: Vec3::new(0.0, 0.0, 0.0),
-    };
-    
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(6.9, 6.9)), Some(Vec2::new(5.0, 5.0)));
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(1.1, 6.9)), Some(Vec2::new(1.1, 3.0)));
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(6.9, 1.1)), None);
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(7.1, 1.1)), Some(Vec2::new(7.0, 1.1)));
-    assert_eq!(level.raycast(Vec2::new(1.1, 1.1), Vec2::new(7.1, 7.1)), Some(Vec2::new(5.0, 5.0)));
+    pub fn handle_click(&mut self, p: Vec2) {
+        for (elem_type, rect) in self.gui_elements.iter() {
+            if !rect.contains(p) {
+                continue;
+            }
+            match elem_type {
+                GUIElement::GameTile(i) => {
+                    if let Some(place_tile) = self.selected_tile {
+                        if self.accept(place_tile, *i) {
+                            self.placed_tiles[*i] = self.selected_tile;
+                        }
+                    }
+                },
+                GUIElement::MenuTile(i) => {
+                    self.selected_tile = Some(self.tile_choices[*i]);
+                },
+                _ => {},
+            }
+        }
+    }
+    pub fn handle_right_click(&mut self, p: Vec2) {
+        for (elem_type, rect) in self.gui_elements.iter() {
+            if !rect.contains(p) {
+                continue;
+            }
+            match elem_type {
+                GUIElement::GameTile(i) => {
+                    if !self.fixed[*i] {
+                        self.placed_tiles[*i] = None;
+                    }
+                },
+                _ => {},
+            }
+        }
+    }
 }
 */
+
+pub fn draw_level(renderer: &mut Renderer, cursor_pos: Vec2, selected_tile: Tile, tile_choices: &[Tile], tiles: &[Option<Tile>], fixed: &[bool], gui_elements: &[(GUIElement, Rect)]) {
+    let empty_colour = Vec4::new(0.2, 0.2, 0.2, 1.0);
+    let fixed_t = 0.4;
+
+    for (elem_type, rect) in gui_elements.iter() {
+        match elem_type {
+            GUIElement::GameTile(i) => {
+                if let Some(tile) = tiles[*i] {
+                    if fixed[*i] {
+                        renderer.draw_tile_reverse_bevel(*rect, tile[0], tile[1], tile[2], tile[3], 10.0, 1.0);
+                    } else {
+                        renderer.draw_tile(*rect, tile[0], tile[1], tile[2], tile[3], 10.0, 1.0);
+                    }
+                } else {
+                    renderer.draw_rect(*rect, empty_colour, 10.0);
+                }
+
+                if let Some(idx) = GetClickedGameTile(cursor_pos, gui_elements) {
+                    if idx == *i && !fixed[*i] {
+                        renderer.draw_tile(*rect, selected_tile[0], selected_tile[1], selected_tile[2], selected_tile[3], 15.0, 0.5);
+                    }
+                }
+            },
+            GUIElement::MenuTile(i) => {
+                let tile = tile_choices[*i];
+                renderer.draw_tile(*rect, tile[0], tile[1], tile[2], tile[3], 10.0, 5.0);
+            },
+            GUIElement::Background => {
+                renderer.draw_rect(*rect, Vec4::new(0.4, 0.4, 0.4, 1.0), 1.0);
+            }
+            GUIElement::SelectionIndicator => {
+                renderer.draw_rect(*rect, Vec4::new(1.0, 1.0, 0.0, 1.0), 4.0);
+            }
+            _ => {},
+        }
+    }
+}
+
+pub fn accept(w: usize, h: usize, tiles: &Vec<Option<Tile>>, place_tile: Tile, place_idx: usize) -> bool {
+    let x = place_idx % w;
+    let y = place_idx / w;
+
+    if x != 0 {
+        if let Some(neigh) = tiles[place_idx - 1] {
+            if neigh[1] != place_tile[3] {
+                println!("reject left edge neighbour");
+                return false;
+            }
+        }
+    }
+
+    if x != w - 1 {
+        if let Some(neigh) = tiles[place_idx + 1] {
+            if neigh[3] != place_tile[1] {
+                println!("reject right edge neighbour");
+                return false;
+            }
+        }
+    }
+
+    if y != h - 1 {
+        if let Some(neigh) = tiles[place_idx + w] {
+            if neigh[0] != place_tile[2] {
+                println!("reject bottom edge neighbour");
+                return false;
+            }
+        }
+    }
+    
+    if y != 0 {
+        if let Some(neigh) = tiles[place_idx - w] {
+            if neigh[2] != place_tile[0] {
+                println!("reject top edge neighbour");
+                return false;
+            }
+        }
+    }
+    true
+}
+
+pub fn calculate_gui(n_tiles: usize, w: usize, h: usize, aspect_ratio: f32, selected_tile: i32) -> Vec<(GUIElement, Rect)> {
+    let mut vec = Vec::new();
+
+    let screen_rect = Rect::new(0.0, 0.0, 1.0, 1.0);
+    vec.push((GUIElement::Background, screen_rect));
+
+    let menu_pane_w = 0.15;
+    let menu_rect = screen_rect.child(0.0, 0.0, menu_pane_w, 1.0).dilate(-0.02);
+    vec.push((GUIElement::Menu, menu_rect));
+    
+    let game_rect = screen_rect.child(menu_pane_w, 0.0, 1.0 - menu_pane_w, 1.0);
+    let board_rect = game_rect.dilate(-0.11).child_with_aspect_ratio(w as f32 / h as f32 / aspect_ratio);
+    vec.push((GUIElement::GameBoard, board_rect));
+    
+    let menu_tile_size = 0.15;
+    for i in 0..n_tiles {
+        let sel_rect = menu_rect.child(0.0, i as f32 * menu_tile_size, 1.0, menu_tile_size);
+        let choice_rect = sel_rect.dilate(-0.002).child_with_aspect_ratio(1.0 / aspect_ratio);
+        vec.push((GUIElement::MenuTile(i), choice_rect));
+        if i == selected_tile as usize {
+            vec.push((GUIElement::SelectionIndicator, sel_rect));
+        }
+    }
+    
+    for i in 0..w {
+        for j in 0..h {
+            let tile_rect = board_rect.child(i as f32 / w as f32, j as f32 / h as f32, 1.0 / w as f32, 1.0 / h as f32); //.dilate(-0.002);
+            vec.push((GUIElement::GameTile(j*w + i), tile_rect));
+        }
+    }
+
+    vec
+}
+
+pub fn GetClickedGameTile(p: Vec2, gui: &[(GUIElement, Rect)]) -> Option<(usize)> {
+    for (element, rect) in gui {
+        if rect.contains(p) {
+            match element {
+                GUIElement::GameTile(idx) => {return Some(*idx)},
+                _ => {},
+            }
+        }
+    }
+
+    None
+
+}
+
+pub fn GetClickedMenuTile(p: Vec2, gui: &Vec<(GUIElement, Rect)>) -> Option<(usize)> {
+    for (element, rect) in gui {
+        if rect.contains(p) {
+            match element {
+                GUIElement::MenuTile(idx) => {return Some(*idx)},
+                _ => {},
+            }
+        }
+    }
+
+    None
+
+}

@@ -1,222 +1,142 @@
-# Reduxlandkings
-Top down shooter roguelike (nuclear throne inspired)
-using SDL style renderer built on OpenGL (no C dependencies yay!!!!!)
+TODO
+----
 
+make editing pleasant - need to be able to do name, w, h, tile pallette
 
-# Architecture
-App: Renderer, input schemas, etc
+hardcode level order and then just have it be lexicographic
+dont use order but use f32 so u can insert in the middle
 
-    v input commands v rendering v
 
-Game: Look, subjective player stuff etc
 
-    v contains v entity commands v
 
-Level: entities and simulation stuff, no specific player
-    
-    ^ entity commands for AI
-
-
-# TODO
- - bullet collisions etc
- - health
- - Minimap - probably need to fuck off camera matrix. or use a different one. get to the bottom of it
- 
-## Guns
-OK so what is a gun?
- * gets updated every frame 
- * either is told to shoot or it isnt 
- * either shoots or it doesnt
-   * edge cases: burst fire where it shoots a minimum number of rounds
 
- * State kept to decide whether to shoot
-   * when last shot
-   * how much ammo
-   * other previous information about shooting (how many of burst etc it can get complicated)
-   * heat or something if its ammoless
 
- * other parameters
 
- * can you have it be a linear combination so you can have a gun combining system? / procedural guns
-   * beneficial characteristics: damage, multishot, bullet velocity, bouncing, AoE, lightning arcs
-   * negative characteristics: cooldown, burst cooldown, ammo use, forced firing, chance to jam, spread, recoil, screen shake, overheat, reload procedure, charge up
-   * ammo types for more variety as well?
 
- * maybe rust type system can make this pretty easy e.g. just have a bunch of maybe components
- 
- * dude crafting and combining guns would be really fun, kinda PoEy which is always good
- * why not do PoE multiverse stuff too
 
- there was that gun fifo idea too. robot makes sense if you do it in esoteric ways. maybe you are a killbot and you hate all this organic life
- could add and send to back for crafting
- maybe a mutate and send to back or + and send to back whatever
- right click eat for hp or something, maybe it takes a sec
 
-you should be a 3 legged robot and game be full of robot jokes
-what was that idea I had before about all your guns use a stack, sure that might be fun as well
 
-procedural stuff that actually has gameplay implications is a good doctrine
+Gwan
 
+stretch goal: voxels and tiles fever dream version of the witness
+deduce the tile score by the illumination of the boy
 
+maximize an area u just fill ay, payload boy
+but bootstrapping can be tricky, least area
 
-# Misc ideas
+YYYY
+then Y--- but that are incompatible or barely compatible
+or compatible for certain shapes of YYYYs eg 3 in a row
 
-level gen - multiple levels, have some big boys that seldom change direction and then spawn a bunch of other ones
+make it isotropic with nonsquare grid
 
-gameplay -- could make clear time be a factor
+reject invalid placement obviously
 
-could have dark levels, visibility cone, scary shit
-progress levels by finding exits, so you kind of opt into sewers or whatever its your own fault. like labyrinth in poe
-have tresury rooms etc
+make some super atmospheric pixely fog and shaders and stuff
 
-## Gun ideas
- - pistol, boring
- - rifle, cool
- - spray and pray smg
+make cool tiled murals of trees and waves etc
+try to evoke nature in it
+can have hints. wonder how hard it will be...
 
+can manipulate the world, open door closed door etc like in the witness. pattern with very specific level of ambiguity
+hardcoded rings, make em fit nicely into the lectern thing
+arrange environment to make it obvious
+cool voxcellular world
 
+ghost
+rotation
+aspect ratio correction device / figure out the layout thing
+it is actually real annoying maintaining separate draw and click things
 
-## Enemies
- - A fatty that spawns little guys
-    - could spawn up to a limit or be static or roam the world, get a ramp up in difficulty, encourage swiftness
- - fast melee guys
- - unpredictable spray and pray shooter
- - fat tanky guy
- - retalliator is pretty good
- - squad tactics
- - uses cover
- - has shield friends that tank
- - sprinter, gets puffed
- - explodes on death (but friendly fire?)
- - suicide guys
- - lazy dudes that dont follow you
- - bullet dodgers
- - guy who splits in two on death
- - guy who pieces of him fly off and spawn smaller guys
- - dudes who only run at you when you look at them
- - dudes who run away when you look at them, backstabbers. shotty
+layout: good way to abstract it out? eg call a function(rect, type) for each thing
 
-## Walkers
- - 3x3
- - spawns exit
- - short erratic diggy
- - spawns short erratic diggy
- - long distance, spawns cluster
+fn layout(F) {
+  F(screen_rect, UI::screen)
 
+  menu rect = screen.child1
+  F(menu_rect, UI::menu)
 
-## Mechanics
- - different guns should come and go, make you adapt and change it up
- - eating guns for health
- - eating guns for $$$
+  game = screen.child2
+  F(game_rect, UI::game)
 
- battery mechanic? rewarding clear speed
- maybe instead of progress on clear spawn an exit
- good if it could signpost the kind of area
- random sort of levels
- pretty CA eg for grass or whatever
- give enemies more of a brain for object permanence + wandering
- also can base behaviour on their guns burst cooldown
+  for i, tile in tiles
+    tile_rect = maths
+    F(tile_rect, Tile(i))
+  }
+}
 
-# Misc issues
-(Medium) Why autocomplete etc jank in this project, is it glams fault? maybe its better to just remember shit anyway
-(Minor) black tear artifact
-(Minor) collision system hitch on walls in -X and -Y direction
+draw() {
+  layout(|r, type| {
+    match type {
+      tile(i) => renderer.draw(r, level.tiles[i])
+      placeytile(i) => renderer.draw(r, level.placeytiles[i])
+      scene => renderer.draw(r, grey)
+      game => renderer.draw(r, different grey)
+    }
+  })
+}
 
-they sometimes freeze if player isnt moving, looks pretty unnatural lol
-  select an entity to see its thoughts
-  raycasting is buggy
+handle_click(pos p) {
+  layout(|r, type| {
+    if r.contains(p) {
+      match type {
+        tile(i) => select i
+        placey(i) => place i
+        scene |
+        game => {},
+      }
+    }
+  })
+}
 
+vs vec of gui elements (r, type), kinda needs recalculating if stuff changes
+but muh mutability, rust will probably be a gay cunt about that
+and supreme flexibility
 
-  probably just have set transform in renderer
-  draw some lines and shit, get to the bottom of why raycasting is being a fucc
-  click on enemies to see their brain work
-  yea soundz g
 
+indicate edge colours
+have changing between puzzles
+make a bunch of puzzles
+implement the aspect ratio thing
+transparency for mr rollover
 
+if i show 'just' what tiles ur using then it will be real easy to design levels
 
-ok fixing transforms etc is getting there. Where should it live? Probably in game.
-game just needs to know if aspect ratio changes.
-game should be able to do screen to world and world to screen (world to screen uses renderer)
-also remove size spaghetti
+// could probably work backwards to create arbitrary patterns
+eg life glider
+computer assisted checking probably a good idea
+existence + uniqueness
 
-reimplement look
 
+ultimately i might just introduce the concept of baked on tiles
 
+rainbow is real pretty i can do it once that is in place
 
-ok time to implement minimap and hppppp
+maybe i could have auto symmetry? more satisfy less click bigger grids
 
-a lot of AI stuff could be implicit random procedural eg tendency to run or not as a fn of time
 
+// just draw score as white squares or red squares
+// fuck font rendering lol
+// layout is real good, it could just use like hsplit or split in 2 or something, as well as lock square aspect or something. square child that fits.
+// draw grid or something
+// draw ghost
+// could make it look nice by having kinda 3d ish or stylish tiles, procedurally cracked
+// maybe magic theme or something
+// nice sounds and maybe it unlocks something
+// could be a the witness puzzle
+// score display
+// dragging is cooler
+// position tiles around the board, more unique
 
-ok todos
-cheeky level gen, CA it to make it 3d, draw heights will be mad useful here
+// what if there was no numbers but just level of glow of a thing
 
-could add underhang for graphics, whatever
+// you could potentially collect tiles tile types for puzzles in the world... locks and keys with a few extra steps
 
---------
+// stone grinding sound, satisfying rotation etc. drag and scroll, release: go back and snap into place
 
-mad lookin fresh af
-might do gun stack modus next
+// level ideas
+// x and y: chainy boys with payoff at the end. long payoff and short payoff options. obviously fit the orientation
 
------
+//start doing it to lay out the rooms
+// funny how theres real vague and real not vague ideas eg with policy as well
 
-ok what next, procedural gun generation?
-
-im kinda scared it will be shit
-
-could do it within parameters like with rejection sampling
-
------
-
-ok make player character persist
-
-with guns, pure random, its shit lol no control
-
-maybe make a enumed 'blueprint' thing of traits
-e.g.:
- - spray n pray
- - hungry
- - shotgun
- - sniper
- - windup
-
-they can be disjoined eg spray n pray vs sniper
-
-reload: movt penalty on burst cooldown
-heavy: mvot penalty on shoot
-
-burst make look follow cursor
-
-maybe a GunTrait basically mutates a gun to  have certain things
-
-so like accurate, inaccurate, shoop da woop, spray n pray, etc
-and thats how combining would work, its like a gun genome
-even let it 2x the traits lol. spray n pray squared
-they could have an order of application. so could be multiplicative, additive, etc
-could have a score as well
-
-other considerations:
- - dependencies
- - allow multiples? could do a different thing depending on if its there already
-
-hmmm base types could simplify it, but how would you fuse them then
-
-
-
------------
-
-1. make player persist
-2. try out gun procgen then
-
-bullet size and basically kinetics could be good to play with
-
-ammo lines
-
-lol xbow, bow and arrow
-
-energy weapons with charge up time, alt fire, overheating
-lol beam weapons with raycast
-bouncy beam that can also kill you? sounds pretty OP
-could have hazards like holes and stuff. can imagine populating them with a ca
-
-bouncer

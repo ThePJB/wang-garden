@@ -1,23 +1,21 @@
 mod renderer;
-mod game;
 mod rect;
-mod entity;
 mod level;
-mod collision_system;
-mod gun;
+mod levels;
 mod kmath;
+mod application;
 
 use glow::*;
 use std::error::Error;
-use glam::{Vec3, Mat4};
+use glam::{Mat4};
 use kmath::*;
 use renderer::*;
 use rect::*;
-use game::*;
+use level::*;
+use levels::*;
+use application::*;
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
-
-
 
 fn main() -> Result<(), Box<dyn Error>> {
 
@@ -31,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
         let event_loop = glutin::event_loop::EventLoop::new();
         let window_builder = glutin::window::WindowBuilder::new()
-            .with_title("Hello triangle!")
+            .with_title("Wang's Garden")
             //.with_inner_size(glutin::dpi::LogicalSize::new(window_x, window_y));
             .with_inner_size(glutin::dpi::PhysicalSize::new(window_x, window_y));
         let window = glutin::ContextBuilder::new()
@@ -77,15 +75,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             gl.use_program(Some(program));
         }
 
+        gl.blend_func(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+        gl.enable(BLEND);
+    
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
 
-        let mut game = Game::new(window_x / window_y);
+
+
+        let mut application = Application::new();
 
         let mut held_keys: HashSet<glutin::event::VirtualKeyCode> = HashSet::new();
         let mut lmb = false;
         let mut normalized_cursor_pos = Vec2::new(0.0, 0.0);
         let mut dt = 1.0f64 / 60f64;
 
+        let mut edit = false;
 
         {
             use glutin::event::{Event, WindowEvent};
@@ -93,55 +97,35 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             event_loop.run(move |event, _, control_flow| {
                 *control_flow = ControlFlow::Poll;
+
+                let mut cleanup = || {
+                    renderer.destroy(&gl);
+                    gl.delete_program(program);
+                    *control_flow = ControlFlow::Exit;
+                };
+
                 match event {
                     Event::LoopDestroyed |
                     Event::WindowEvent {event: WindowEvent::CloseRequested, ..} |
                     Event::WindowEvent {event: WindowEvent::KeyboardInput {
                         input: glutin::event::KeyboardInput { virtual_keycode: Some(glutin::event::VirtualKeyCode::Escape), ..}, ..}, ..}
                     => {
-                        gl.delete_program(program);
-                        renderer.destroy(&gl);
-                        *control_flow = ControlFlow::Exit;
-                        return;
+                        cleanup();
                     },
 
 
                     Event::MainEventsCleared => {
                         // update
                         let loop_start = SystemTime::now();
-
-
-                        let mut motion_vec = Vec2::new(0.0, 0.0);
-                        if held_keys.contains(&glutin::event::VirtualKeyCode::W) {
-                            motion_vec.y -= 1.0;
-                        }
-                        if held_keys.contains(&glutin::event::VirtualKeyCode::S) {
-                            motion_vec.y += 1.0;
-                        }
-                        if held_keys.contains(&glutin::event::VirtualKeyCode::A) {
-                            motion_vec.x -= 1.0;
-                        }
-                        if held_keys.contains(&glutin::event::VirtualKeyCode::D) {
-                            motion_vec.x += 1.0;
-                        }
-                        if motion_vec != Vec2::new(0.0, 0.0) {
-                            game.apply_command(InputCommand::Move(motion_vec.normalize()));
-                        } else {
-                            game.apply_command(InputCommand::Move(Vec2::new(0.0, 0.0)));
-                        }
-
-                        game.update(window_x / window_y, dt as f32);
-
                         // draw
                         gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
 
                         renderer.clear();
-
                         
                         gl.uniform_matrix_4_f32_slice(gl.get_uniform_location(program, "projection").as_ref(),
                             false, &projection_mat.to_cols_array());
-                        
-                        game.draw(&mut renderer);
+
+                        application.draw(&mut renderer, window_x/window_y, normalized_cursor_pos);
 
                         renderer.present(&gl);
                         
@@ -160,12 +144,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
 
-
-                    Event::RedrawRequested(_) => {
-                        // idc
-                    }
-
-
                     Event::WindowEvent { ref event, .. } => match event {
                         WindowEvent::Resized(physical_size) => {
                             window.resize(*physical_size);
@@ -173,6 +151,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             window_y = physical_size.height as f32;
                             gl.viewport(0, 0, physical_size.width as i32, physical_size.height as i32);
                             println!("aspect ratio: {:?}", window_x / window_y);
+                            // level.update_gui(window_x / window_y);
 
                         }
                         WindowEvent::CloseRequested => {
@@ -195,9 +174,43 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     renderer.destroy(&gl);
                                     *control_flow = ControlFlow::Exit;
                                 },
-                                (glutin::event::VirtualKeyCode::R, glutin::event::ElementState::Released) => {
-                                    game.apply_command(InputCommand::Reset)
+                                (key, glutin::event::ElementState::Pressed) => application.key_press(*key),
+                                /*
+                                (glutin::event::VirtualKeyCode::E, glutin::event::ElementState::Pressed) => {
+                                    level.rotate_forward();
                                 },
+                                (glutin::event::VirtualKeyCode::Q, glutin::event::ElementState::Pressed) => {
+                                    level.rotate_backward();
+                                },
+                                (glutin::event::VirtualKeyCode::N, glutin::event::ElementState::Pressed) => {
+                                    if level_idx > 0 {
+                                        level_idx -= 1;
+                                    }
+                                    level = levels[level_idx].clone();
+                                    level.update_gui(window_x/window_y);
+                                    println!("{}", level.name)
+                                },
+                                (glutin::event::VirtualKeyCode::M, glutin::event::ElementState::Pressed) => {
+                                    if level_idx < levels.len() - 1 {
+                                        level_idx += 1;
+                                    }
+                                    level = levels[level_idx].clone();
+                                    level.update_gui(window_x/window_y);
+                                    println!("{}", level.name)
+                                },
+                                (glutin::event::VirtualKeyCode::P, glutin::event::ElementState::Pressed) => {
+                                    edit = match edit {
+                                        true => {
+                                            println!("edit off");
+                                            false
+                                        },
+                                        false => {
+                                            println!("edit on");
+                                            true
+                                        }
+                                    }
+                                },
+                                */
                             _ => (),
                         }},
                         WindowEvent::MouseInput {
@@ -205,19 +218,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                             state: glutin::event::ElementState::Pressed,
                             ..
                         } => {
-                            game.apply_command(InputCommand::EatGun);
+                            application.rmb(normalized_cursor_pos);
+                            //game.apply_command(InputCommand::EatGun);
                         }
                         WindowEvent::MouseInput {
                             button: glutin::event::MouseButton::Left,
-                            state:state,
+                            state,
                             ..
                         } => {
                             if *state == glutin::event::ElementState::Pressed {
                                 lmb = true;
-                                game.apply_command(InputCommand::Shoot(normalized_cursor_pos));
+                                application.lmb(normalized_cursor_pos);
                             } else {
                                 lmb = false;
-                                game.apply_command(InputCommand::Unshoot);
                             }
                         },
                         WindowEvent::CursorMoved {
@@ -225,13 +238,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                             ..
                         } => {
                             normalized_cursor_pos = Vec2::new(
-                                pos.x as f32 / window_x * window_x / window_y, 
+                                // pos.x as f32 / window_x * window_x / window_y, 
+                                pos.x as f32 / window_x, 
                                 pos.y as f32 / window_y);
-
-                            game.apply_command(InputCommand::Look(normalized_cursor_pos));
-                            if lmb {
-                                game.apply_command(InputCommand::Shoot(normalized_cursor_pos));
-                            }
                         },
                         _ => (),
                     },
