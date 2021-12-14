@@ -1,18 +1,10 @@
 TODO
 ----
 
-make editing pleasant - need to be able to do name, w, h, tile pallette
-
-hardcode level order and then just have it be lexicographic
-dont use order but use f32 so u can insert in the middle
-
-
-
-
-
-
-
-
+add a 'q, e to rotate tile' somehow
+order
+better editor lol
+fix warnings
 
 
 

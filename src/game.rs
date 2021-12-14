@@ -1,19 +1,13 @@
-mod renderer;
-mod rect;
-mod level;
-mod levels;
-mod kmath;
-mod application;
+
 
 use glow::*;
 use std::error::Error;
 use glam::{Mat4};
-use kmath::*;
-use renderer::*;
-use rect::*;
-use level::*;
-use levels::*;
-use application::*;
+use wang::kmath::*;
+use wang::renderer::*;
+use wang::rect::*;
+use wang::level::*;
+use wang::application::*;
 use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 

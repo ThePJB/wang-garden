@@ -4,6 +4,7 @@ use crate::kmath::*;
 use crate::rect::*;
 use std::fs;
 use std::io::prelude::*;
+use std::collections::HashMap;
 use glutin::event::VirtualKeyCode;
 
 pub const LEVEL_PATH: &'static str = "./levels/";
@@ -98,14 +99,14 @@ impl Application {
                     self.current_level += 1;
                 }
                 let ld = &self.level_datas[self.current_level];
-                println!("{} - {}", ld.number, ld.name)
+                println!("{} - {}", self.current_level, ld.name)
             },
             VirtualKeyCode::N => {
                 if self.current_level > 0 {
                     self.current_level -= 1;
                 }
                 let ld = &self.level_datas[self.current_level];
-                println!("{} - {}", ld.number, ld.name)
+                println!("{} - {}", self.current_level, ld.name)
             },
             VirtualKeyCode::Q => {
                 self.levels[self.current_level].selected_tile = self.levels[self.current_level].selected_tile.rotate_ccw();
@@ -140,17 +141,27 @@ pub fn load_level_data() -> Vec<LevelData> {
         .filter_map(|res| res.ok())
         .map(|res| res.path().into_os_string().into_string().unwrap())
         .collect();
+
+    let mut level_priorities = HashMap::new();
+    level_priorities.insert("diamond", 1.0);
+    level_priorities.insert("chevron", 2.0);
+    level_priorities.insert("stonks", 3.0);
+    level_priorities.insert("stripes", 4.0);
+    level_priorities.insert("redirect", 5.0);
+    level_priorities.insert("bevel", 6.0);
+    level_priorities.insert("tricolor", 10.0);
+    level_priorities.insert("beaut2", 11.0);
     
-    entries.sort();
-
+    
     let mut level_datas = Vec::new();
-
+    
     for path in entries {
         let mut file = fs::File::open(path).unwrap();
         let mut contents = String::new();
-        file.read_to_string(&mut contents);
+        file.read_to_string(&mut contents).unwrap();
         level_datas.push(LevelData::load(contents));
     }    
-
+    level_datas.sort_by_key(|x| (level_priorities.get(&x.name as &str).unwrap_or(&99999.0) * 10000.0) as u64);
+    
     level_datas
 }

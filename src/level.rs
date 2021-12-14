@@ -25,7 +25,6 @@ impl TileRotate for Tile {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LevelData {
     pub name: String,
-    pub number: i32,
     pub w: usize,
     pub h: usize,
     pub tile_choices: Vec<Tile>,
@@ -38,10 +37,9 @@ impl LevelData {
         self.fixed_tiles.clone()
     }
 
-    pub fn new(number: i32, name: String, w: usize, h: usize, tile_choices: Vec<Tile>) -> LevelData {
+    pub fn new(name: String, w: usize, h: usize, tile_choices: Vec<Tile>) -> LevelData {
         LevelData {
             name,
-            number,
             w,
             h,
             tile_choices,
@@ -54,7 +52,7 @@ impl LevelData {
     }
 
     pub fn save(&self) {
-        let path = format!("{}{:03} - {}.json", LEVEL_PATH, self.number, self.name);
+        let path = format!("{}{}.json", LEVEL_PATH, self.name);
         let json_str = serde_json::to_string(self).unwrap();
         let mut file = File::create(path).unwrap();
         file.write_all(json_str.as_bytes()).unwrap();
@@ -272,7 +270,7 @@ pub fn calculate_gui(n_tiles: usize, w: usize, h: usize, aspect_ratio: f32, sele
     let board_rect = game_rect.dilate(-0.11).child_with_aspect_ratio(w as f32 / h as f32 / aspect_ratio);
     vec.push((GUIElement::GameBoard, board_rect));
     
-    let menu_tile_size = 0.15;
+    let menu_tile_size = (1.0 / n_tiles as f32).min(0.15);
     for i in 0..n_tiles {
         let sel_rect = menu_rect.child(0.0, i as f32 * menu_tile_size, 1.0, menu_tile_size);
         let choice_rect = sel_rect.dilate(-0.002).child_with_aspect_ratio(1.0 / aspect_ratio);
