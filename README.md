@@ -82,7 +82,7 @@ handle_click(pos p) {
 }
 
 vs vec of gui elements (r, type), kinda needs recalculating if stuff changes
-but muh mutability, rust will probably be a gay cunt about that
+but muh mutability, rust will probably be a silly stuff about that
 and supreme flexibility
 
 
@@ -108,7 +108,7 @@ maybe i could have auto symmetry? more satisfy less click bigger grids
 
 
 // just draw score as white squares or red squares
-// fuck font rendering lol
+// stuff font rendering lol
 // layout is real good, it could just use like hsplit or split in 2 or something, as well as lock square aspect or something. square child that fits.
 // draw grid or something
 // draw ghost
